@@ -495,6 +495,13 @@ int pv_get_json_ext(struct sip_msg* msg,  pv_param_t* pvp, pv_value_t* val, int 
 			val->flags |= PV_VAL_STR;
 		}
 	}
+	else if( json_object_is_type(obj, json_type_boolean))
+	{
+		int_value = json_object_get_boolean(obj) ? 1 : 0;
+		val->rs.s = sint2str(int_value, &val->rs.len);
+		val->ri = int_value;
+		val->flags = PV_VAL_INT|PV_TYPE_INT|PV_VAL_STR;
+	}
 	else if( json_object_is_type(obj, json_type_string))
 	{
 		val->flags = PV_VAL_STR;
