@@ -12,14 +12,14 @@ import urllib.request
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Optional
 
 ROOT = Path(__file__).resolve().parent
 UI = ROOT / "index.html"
 MI_URL = os.environ.get("OPENSIPS_MI_URL", "http://127.0.0.1:8888/mi")
 CONTROL_TOKEN = os.environ.get("CONTROL_TOKEN", "")
 SNAPSHOT_METHODS = [m.strip() for m in os.environ.get(
-    "OPENSIPS_SNAPSHOT_METHODS", "get_statistics,get_status_report"
+    "OPENSIPS_SNAPSHOT_METHODS", "get_statistics,status_report:status,uptime"
 ).split(",") if m.strip()]
 SSE_INTERVAL = max(0.5, float(os.environ.get("CONTROL_SSE_INTERVAL", "2")))
 
@@ -121,11 +121,17 @@ class MIClient:
 MI = MIClient(MI_URL)
 
 
+def snapshot_call(method: str) -> Dict[str, Any]:
+    if method == "get_statistics":
+        return MI.call(method, {"statistics": ["all"]})
+    return MI.call(method)
+
+
 def snapshot() -> Dict[str, Any]:
     return {
         "timestamp": time.time(),
         "mi_url": MI_URL,
-        "results": {method: MI.call(method) for method in SNAPSHOT_METHODS},
+        "results": {method: snapshot_call(method) for method in SNAPSHOT_METHODS},
     }
 
 
