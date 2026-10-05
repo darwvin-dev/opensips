@@ -1,0 +1,28 @@
+name: SIPp CI tools
+
+on:
+  pull_request:
+    paths:
+      - 'tools/sipp-ci/**'
+      - '.github/workflows/sipp-ci-tools.yml'
+  push:
+    paths:
+      - 'tools/sipp-ci/**'
+      - '.github/workflows/sipp-ci-tools.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reporter-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test SIPp report parser and assertions
+        run: python3 -m unittest discover -s tools/sipp-ci -p 'test_*.py' -v
+      - name: Validate reporter syntax
+        run: python3 -m py_compile tools/sipp-ci/sipp_report.py tools/sipp-ci/test_sipp_report.py
