@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 if [[ $# -lt 1 ]]; then
   echo "usage: $0 <sipp arguments...>" >&2
@@ -26,8 +26,13 @@ report_args=(
 [[ -n "${SIPP_MAX_RESPONSE_TIME_MS:-}" ]] && report_args+=(--max-response-time-ms "$SIPP_MAX_RESPONSE_TIME_MS")
 [[ -n "${SIPP_MIN_CALL_RATE:-}" ]] && report_args+=(--min-call-rate "$SIPP_MIN_CALL_RATE")
 
-python3 "$(dirname "$0")/sipp_report.py" "${report_args[@]}"
-report_rc=$?
+if [[ -s "$STATS_FILE" ]]; then
+  python3 "$(dirname "$0")/sipp_report.py" "${report_args[@]}"
+  report_rc=$?
+else
+  echo "SIPp did not produce statistics at $STATS_FILE" >&2
+  report_rc=2
+fi
 
 if [[ $sipp_rc -ne 0 ]]; then
   exit "$sipp_rc"
