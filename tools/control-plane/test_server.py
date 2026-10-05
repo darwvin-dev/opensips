@@ -8,6 +8,7 @@ class ControlPlaneTests(unittest.TestCase):
     def test_read_only_classification(self):
         self.assertTrue(server.is_read_only("get_statistics"))
         self.assertTrue(server.is_read_only("show_rtpengines"))
+        self.assertTrue(server.is_read_only("status_report:status"))
         self.assertTrue(server.is_read_only("status"))
         self.assertFalse(server.is_read_only("reload"))
         self.assertFalse(server.is_read_only("teardown"))
@@ -22,6 +23,22 @@ class ControlPlaneTests(unittest.TestCase):
             self.assertTrue(server.authorized("Bearer secret", "reload"))
         finally:
             server.CONTROL_TOKEN = old
+
+    def test_snapshot_statistics_uses_required_array_param(self):
+        old = server.MI
+
+        class FakeMI:
+            def call(self, method, params=None):
+                return {"method": method, "params": params}
+
+        try:
+            server.MI = FakeMI()
+            result = server.snapshot_call("get_statistics")
+            self.assertEqual(result["params"], {"statistics": ["all"]})
+            result = server.snapshot_call("status_report:status")
+            self.assertIsNone(result["params"])
+        finally:
+            server.MI = old
 
     def test_metrics_prometheus_format(self):
         metrics = server.Metrics()
