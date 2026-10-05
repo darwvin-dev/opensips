@@ -52,6 +52,8 @@ def validate_profile(p: Profile) -> None:
         raise ValueError("delay, jitter and rate must be non-negative")
     if p.jitter_ms and not p.delay_ms:
         raise ValueError("jitter requires non-zero delay")
+    if p.reorder_pct and not p.delay_ms:
+        raise ValueError("reordering requires non-zero delay in netem")
 
 
 def tc_prefix(namespace: Optional[str]) -> List[str]:
