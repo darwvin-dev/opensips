@@ -26,6 +26,10 @@ class ImpairTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             impair.validate_profile(impair.Profile(loss_pct=101))
 
+    def test_reorder_requires_delay(self):
+        with self.assertRaises(ValueError):
+            impair.validate_profile(impair.Profile(reorder_pct=1))
+
 
 if __name__ == "__main__":
     unittest.main()
