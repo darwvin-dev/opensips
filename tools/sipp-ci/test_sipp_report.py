@@ -7,7 +7,7 @@ from pathlib import Path
 import sipp_report
 
 
-SAMPLE = """StartTime;SuccessfulCall(C);FailedCall(C);ResponseTime(C);CallRate(C)\n0;95;5;120;50\n1;198;2;85;75\n"""
+SAMPLE = """StartTime;SuccessfulCall(C);FailedCall(C);ResponseTime1(C);CallRate(C)\n0;95;5;00:00:00:120000;50\n1;198;2;00:00:00:085000;75\n"""
 
 
 class SippReportTests(unittest.TestCase):
@@ -20,6 +20,12 @@ class SippReportTests(unittest.TestCase):
         self.assertEqual(summary["failed_calls"], 2)
         self.assertEqual(summary["response_time_ms"], 85)
         self.assertAlmostEqual(summary["success_rate"], 99.0)
+
+    def test_response_time_duration_is_converted_to_ms(self):
+        self.assertEqual(sipp_report._duration_ms("00:00:00:002000"), 2.0)
+        self.assertEqual(sipp_report._duration_ms("00:00:01:500000"), 1500.0)
+        self.assertEqual(sipp_report._duration_ms("00:01:00"), 60000.0)
+        self.assertIsNone(sipp_report._duration_ms("not-a-time"))
 
     def test_threshold_failure(self):
         summary = {
