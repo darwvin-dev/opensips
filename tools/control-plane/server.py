@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import json
 import os
+import socket
 import threading
 import time
 import urllib.error
@@ -78,8 +80,38 @@ def is_read_only(method: str) -> bool:
 
 
 def is_loopback_listener(host: str) -> bool:
-    value = host.strip().lower()
-    return value in ("127.0.0.1", "::1", "localhost")
+    value = host.strip()
+    if not value:
+        return False
+
+    try:
+        return ipaddress.ip_address(value).is_loopback
+    except ValueError:
+        pass
+
+    try:
+        resolved = {
+            item[4][0]
+            for item in socket.getaddrinfo(value, None, type=socket.SOCK_STREAM)
+        }
+    except socket.gaierror:
+        return False
+
+    if not resolved:
+        return False
+    try:
+        return all(ipaddress.ip_address(address).is_loopback for address in resolved)
+    except ValueError:
+        return False
+
+
+def validate_snapshot_methods(methods: list[str]) -> None:
+    unsafe = [method for method in methods if not is_read_only(method)]
+    if unsafe:
+        raise ValueError(
+            "OPENSIPS_SNAPSHOT_METHODS may contain read-only MI methods only; "
+            f"refusing: {', '.join(unsafe)}"
+        )
 
 
 def bearer_authorized(auth_header: Optional[str]) -> bool:
@@ -141,6 +173,9 @@ def snapshot_call(method: str) -> Dict[str, Any]:
 
 
 def snapshot() -> Dict[str, Any]:
+    # Environment configuration is validated at startup, but keep this guard
+    # here as defense in depth for embedders/tests which mutate the list.
+    validate_snapshot_methods(SNAPSHOT_METHODS)
     return {
         "timestamp": time.time(),
         "mi_url": MI_URL,
@@ -253,6 +288,10 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     host = os.environ.get("CONTROL_LISTEN", "127.0.0.1")
     port = int(os.environ.get("CONTROL_PORT", "8088"))
+    try:
+        validate_snapshot_methods(SNAPSHOT_METHODS)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     if not is_loopback_listener(host) and not ALLOW_REMOTE:
         raise SystemExit(
             "refusing non-loopback CONTROL_LISTEN without CONTROL_ALLOW_REMOTE=1; "
