@@ -4,10 +4,12 @@ A dependency-free operational UI and REST gateway for the OpenSIPS Management In
 
 ## Features
 
-- browser UI with live Server-Sent Events (SSE)
+- browser UI with authenticated live polling
+- Server-Sent Events (SSE) endpoint for API clients
 - generic JSON MI command endpoint
-- read-only commands available without a control token
-- mutating commands denied by default and protected with a bearer token when enabled
+- read-only commands available without a control token only on localhost
+- all API/metrics access authenticated when remote mode is enabled
+- mutating commands denied by default and protected with a bearer token
 - Prometheus metrics for the control-plane process
 - configurable live snapshot methods
 - localhost-only default listener
@@ -31,7 +33,7 @@ Environment variables:
 - `CONTROL_LISTEN` — listener address; default `127.0.0.1`
 - `CONTROL_PORT` — listener port; default `8088`
 - `CONTROL_ALLOW_REMOTE` — must be `1` before binding to a non-loopback address
-- `CONTROL_TOKEN` — bearer token required for mutating methods; if unset, mutations are disabled
+- `CONTROL_TOKEN` — bearer token required for mutating methods; also mandatory for all API/metrics requests when remote mode is enabled
 - `OPENSIPS_SNAPSHOT_METHODS` — comma-separated read methods for the live dashboard
 - `CONTROL_SSE_INTERVAL` — live refresh interval in seconds; minimum `0.5`
 
@@ -72,7 +74,9 @@ Request:
 }
 ```
 
-Methods beginning with `get_`, `list_`, `show_`, `status`, `uptime`, `ps`, or `which` are treated as read-only. Other methods require:
+Methods beginning with `get_`, `list_` or `show_`, plus the exact methods
+`status_report`, `status_report:status`, `status`, `uptime`, `ps` and
+`which`, are treated as read-only on localhost. Other methods require:
 
 ```text
 Authorization: Bearer <CONTROL_TOKEN>
@@ -82,6 +86,6 @@ This is a deliberate deny-by-default policy. If `CONTROL_TOKEN` is not configure
 
 ## Deployment notes
 
-The built-in HTTP server is intended as a small control surface, not an Internet-facing identity layer. By default it refuses any non-loopback `CONTROL_LISTEN`. If remote binding is intentionally required, set `CONTROL_ALLOW_REMOTE=1` and place the service behind the same TLS, SSO/VPN and network policy used for other production operations endpoints. Read-only dashboard APIs are intentionally unauthenticated inside that trusted boundary; mutating MI calls still require `CONTROL_TOKEN`.
+The built-in HTTP server is intended as a small control surface, not an Internet-facing identity layer. By default it refuses any non-loopback `CONTROL_LISTEN`. If remote binding is intentionally required, set `CONTROL_ALLOW_REMOTE=1`, configure a non-empty `CONTROL_TOKEN`, and place the service behind the same TLS, SSO/VPN and network policy used for other production operations endpoints.
 
-The UI never stores the bearer token in local storage; it exists only in the current page input.
+When remote mode is enabled, `/api/*` and `/metrics` require Bearer authentication, including read-only snapshot and SSE requests. The static UI itself remains accessible so an operator can enter the token. The browser does not store the token in local storage; it exists only in the current page input.
