@@ -115,7 +115,16 @@ def is_safe_local_host_header(value: Optional[str]) -> bool:
         host = urlsplit("//" + value, scheme="http").hostname
     except ValueError:
         return False
-    return bool(host) and is_loopback_listener(host)
+    if not host:
+        return False
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        # Do not resolve arbitrary hostnames here: accepting a hostname merely
+        # because DNS currently maps it to 127/8 would re-introduce DNS rebinding.
+        return False
 
 
 def validate_snapshot_methods(methods: list[str]) -> None:
