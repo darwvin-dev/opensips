@@ -20,6 +20,7 @@ class Profile:
     delay_ms: float = 0
     jitter_ms: float = 0
     loss_pct: float = 0
+    loss_correlation_pct: float = 0
     duplicate_pct: float = 0
     reorder_pct: float = 0
     corrupt_pct: float = 0
@@ -33,7 +34,7 @@ PROFILES: Dict[str, Profile] = {
     "congested-4g": Profile(delay_ms=90, jitter_ms=45, loss_pct=2.5, reorder_pct=0.5, rate_kbit=2500),
     "bad-mobile": Profile(delay_ms=160, jitter_ms=80, loss_pct=7.0, duplicate_pct=0.5, reorder_pct=2.0, rate_kbit=900),
     "satellite": Profile(delay_ms=550, jitter_ms=25, loss_pct=1.0, rate_kbit=5000),
-    "burst-loss": Profile(delay_ms=40, jitter_ms=10, loss_pct=12.0, rate_kbit=8000),
+    "burst-loss": Profile(delay_ms=40, jitter_ms=10, loss_pct=12.0, loss_correlation_pct=70.0, rate_kbit=8000),
     "reorder": Profile(delay_ms=30, jitter_ms=20, loss_pct=0.5, duplicate_pct=0.5, reorder_pct=8.0, rate_kbit=10000),
 }
 
@@ -44,12 +45,14 @@ def validate_name(value: Optional[str], kind: str) -> None:
 
 
 def validate_profile(p: Profile) -> None:
-    for name in ("loss_pct", "duplicate_pct", "reorder_pct", "corrupt_pct"):
+    for name in ("loss_pct", "loss_correlation_pct", "duplicate_pct", "reorder_pct", "corrupt_pct"):
         value = getattr(p, name)
         if value < 0 or value > 100:
             raise ValueError(f"{name} must be in 0..100")
     if p.delay_ms < 0 or p.jitter_ms < 0 or p.rate_kbit < 0:
         raise ValueError("delay, jitter and rate must be non-negative")
+    if p.loss_correlation_pct and not p.loss_pct:
+        raise ValueError("loss correlation requires non-zero loss")
     if p.jitter_ms and not p.delay_ms:
         raise ValueError("jitter requires non-zero delay")
     if p.reorder_pct and not p.delay_ms:
@@ -73,6 +76,8 @@ def build_apply(interface: str, profile: Profile, namespace: Optional[str] = Non
             cmd += [f"{profile.jitter_ms:g}ms", "distribution", "normal"]
     if profile.loss_pct:
         cmd += ["loss", "random", f"{profile.loss_pct:g}%"]
+        if profile.loss_correlation_pct:
+            cmd += [f"{profile.loss_correlation_pct:g}%"]
     if profile.duplicate_pct:
         cmd += ["duplicate", f"{profile.duplicate_pct:g}%"]
     if profile.reorder_pct:
