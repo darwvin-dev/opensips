@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import threading
@@ -24,7 +25,8 @@ SNAPSHOT_METHODS = [m.strip() for m in os.environ.get(
 SSE_INTERVAL = max(0.5, float(os.environ.get("CONTROL_SSE_INTERVAL", "2")))
 ALLOW_REMOTE = os.environ.get("CONTROL_ALLOW_REMOTE", "").strip().lower() in ("1", "true", "yes", "on")
 
-READ_PREFIXES = ("get_", "list_", "show_", "status", "uptime", "ps", "which")
+READ_PREFIXES = ("get_", "list_", "show_")
+READ_METHODS = {"status_report", "uptime", "ps", "which"}
 
 
 class Metrics:
@@ -72,7 +74,7 @@ METRICS = Metrics()
 
 def is_read_only(method: str) -> bool:
     value = method.strip().lower()
-    return bool(value) and value.startswith(READ_PREFIXES)
+    return bool(value) and (value in READ_METHODS or value.startswith(READ_PREFIXES))
 
 
 def is_loopback_listener(host: str) -> bool:
@@ -80,12 +82,17 @@ def is_loopback_listener(host: str) -> bool:
     return value in ("127.0.0.1", "::1", "localhost")
 
 
-def authorized(auth_header: Optional[str], method: str) -> bool:
-    if is_read_only(method):
-        return True
-    if not CONTROL_TOKEN:
+def bearer_authorized(auth_header: Optional[str]) -> bool:
+    if not CONTROL_TOKEN or not auth_header:
         return False
-    return auth_header == f"Bearer {CONTROL_TOKEN}"
+    expected = f"Bearer {CONTROL_TOKEN}"
+    return hmac.compare_digest(auth_header, expected)
+
+
+def authorized(auth_header: Optional[str], method: str) -> bool:
+    if is_read_only(method) and not ALLOW_REMOTE:
+        return True
+    return bearer_authorized(auth_header)
 
 
 class MIClient:
@@ -175,6 +182,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         METRICS.inc_http()
+        if ALLOW_REMOTE and self.path.startswith(("/api/", "/metrics")):
+            if not bearer_authorized(self.headers.get("Authorization")):
+                self._json(HTTPStatus.UNAUTHORIZED, {"error": "Bearer authentication required"})
+                return
         if self.path == "/" or self.path == "/index.html":
             data = UI.read_bytes()
             self._headers(HTTPStatus.OK, "text/html; charset=utf-8", len(data))
@@ -247,6 +258,8 @@ def main() -> None:
             "refusing non-loopback CONTROL_LISTEN without CONTROL_ALLOW_REMOTE=1; "
             "keep the service on loopback or explicitly opt in and protect it with TLS/SSO/VPN"
         )
+    if ALLOW_REMOTE and not CONTROL_TOKEN:
+        raise SystemExit("CONTROL_TOKEN is required whenever CONTROL_ALLOW_REMOTE=1")
     print(f"OpenSIPS control plane: http://{host}:{port} -> {MI_URL}")
     ThreadingHTTPServer((host, port), Handler).serve_forever()
 
