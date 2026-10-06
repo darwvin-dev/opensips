@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
 import re
@@ -85,22 +86,35 @@ def resource_attributes(service_name: str, raw: str) -> List[Dict[str, Any]]:
     return [{"key": key, "value": {"stringValue": val}} for key, val in sorted(attrs.items())]
 
 
-def build_otlp(metrics: Dict[str, float], service_name: str, resource_raw: str, timestamp_ns: int | None = None) -> Dict[str, Any]:
+def is_counter_stat(name: str, patterns: Iterable[str]) -> bool:
+    return any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns)
+
+
+def build_otlp(metrics: Dict[str, float], service_name: str, resource_raw: str,
+               timestamp_ns: int | None = None,
+               counter_patterns: Iterable[str] = ()) -> Dict[str, Any]:
     now = timestamp_ns if timestamp_ns is not None else time.time_ns()
     points = []
     for original, value in sorted(metrics.items()):
-        points.append({
+        data_point = {
+            "timeUnixNano": str(now),
+            "asDouble": value,
+            "attributes": [{"key": "opensips.stat", "value": {"stringValue": original}}],
+        }
+        metric = {
             "name": sanitize_metric_name(original),
             "description": f"OpenSIPS statistic {original}",
             "unit": "1",
-            "gauge": {
-                "dataPoints": [{
-                    "timeUnixNano": str(now),
-                    "asDouble": value,
-                    "attributes": [{"key": "opensips.stat", "value": {"stringValue": original}}],
-                }]
-            },
-        })
+        }
+        if is_counter_stat(original, counter_patterns):
+            metric["sum"] = {
+                "aggregationTemporality": 2,
+                "isMonotonic": True,
+                "dataPoints": [data_point],
+            }
+        else:
+            metric["gauge"] = {"dataPoints": [data_point]}
+        points.append(metric)
     return {
         "resourceMetrics": [{
             "resource": {"attributes": resource_attributes(service_name, resource_raw)},
@@ -113,9 +127,11 @@ def build_otlp(metrics: Dict[str, float], service_name: str, resource_raw: str, 
 
 
 def export_once(mi_url: str, endpoint: str, selectors: List[str], service_name: str,
-                resource_raw: str, otlp_headers: Dict[str, str], timeout: float) -> int:
+                resource_raw: str, otlp_headers: Dict[str, str], timeout: float,
+                counter_patterns: Iterable[str] = ()) -> int:
     stats = fetch_statistics(mi_url, selectors)
-    payload = build_otlp(stats, service_name, resource_raw)
+    payload = build_otlp(stats, service_name, resource_raw,
+                         counter_patterns=counter_patterns)
     json_request(otlp_endpoint(endpoint), payload, otlp_headers, timeout=timeout)
     return len(stats)
 
@@ -135,12 +151,17 @@ def main() -> int:
     resource_raw = os.environ.get("OTEL_RESOURCE_ATTRIBUTES", "")
     selectors = [x.strip() for x in os.environ.get("OPENSIPS_STATS", "all").split(",") if x.strip()]
     headers = parse_pairs(os.environ.get("OTEL_EXPORTER_OTLP_HEADERS", ""))
+    counter_patterns = [
+        x.strip() for x in os.environ.get("OTEL_COUNTER_STATS", "").split(",")
+        if x.strip()
+    ]
     interval = max(1.0, float(os.environ.get("OTEL_INTERVAL", "5")))
     timeout = max(0.5, float(os.environ.get("OTEL_TIMEOUT", "5")))
 
     while True:
         try:
-            count = export_once(mi_url, endpoint, selectors, service_name, resource_raw, headers, timeout)
+            count = export_once(mi_url, endpoint, selectors, service_name,
+                                resource_raw, headers, timeout, counter_patterns)
             if args.debug:
                 print(f"exported {count} OpenSIPS statistics to {otlp_endpoint(endpoint)}")
         except (OSError, ValueError, RuntimeError, urllib.error.URLError, json.JSONDecodeError) as exc:
