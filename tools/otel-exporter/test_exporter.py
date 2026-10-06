@@ -48,6 +48,43 @@ class ExporterTests(unittest.TestCase):
         self.assertEqual(counter["sum"]["aggregationTemporality"], 2)
         self.assertIn("gauge", metrics["opensips_dialog_active_dialogs"])
 
+        point = counter["sum"]["dataPoints"][0]
+        self.assertEqual(point["startTimeUnixNano"], "123")
+
+    def test_counter_start_time_is_stable_until_reset(self):
+        state = {}
+        first = exporter.build_otlp(
+            {"core:received_requests": 42.0},
+            "opensips-test", "", timestamp_ns=100,
+            counter_patterns=["core:*_requests"], counter_state=state,
+        )
+        second = exporter.build_otlp(
+            {"core:received_requests": 50.0},
+            "opensips-test", "", timestamp_ns=200,
+            counter_patterns=["core:*_requests"], counter_state=state,
+        )
+        reset = exporter.build_otlp(
+            {"core:received_requests": 3.0},
+            "opensips-test", "", timestamp_ns=300,
+            counter_patterns=["core:*_requests"], counter_state=state,
+        )
+
+        def point(payload):
+            return payload["resourceMetrics"][0]["scopeMetrics"][0]["metrics"][0]["sum"]["dataPoints"][0]
+
+        self.assertEqual(point(first)["startTimeUnixNano"], "100")
+        self.assertEqual(point(second)["startTimeUnixNano"], "100")
+        self.assertEqual(point(reset)["startTimeUnixNano"], "300")
+        self.assertEqual(point(reset)["timeUnixNano"], "300")
+
+    def test_gauge_has_no_counter_start_time(self):
+        payload = exporter.build_otlp(
+            {"dialog:active_dialogs": 3.0},
+            "opensips-test", "", timestamp_ns=123,
+        )
+        point = payload["resourceMetrics"][0]["scopeMetrics"][0]["metrics"][0]["gauge"]["dataPoints"][0]
+        self.assertNotIn("startTimeUnixNano", point)
+
     def test_parse_pairs(self):
         self.assertEqual(exporter.parse_pairs("a=1,b=two"), {"a": "1", "b": "two"})
         with self.assertRaises(ValueError):
