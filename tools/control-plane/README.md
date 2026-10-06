@@ -11,6 +11,7 @@ A dependency-free operational UI and REST gateway for the OpenSIPS Management In
 - Prometheus metrics for the control-plane process
 - configurable live snapshot methods
 - localhost-only default listener
+- non-loopback listeners refused unless explicitly enabled
 
 ## Start
 
@@ -29,6 +30,7 @@ Environment variables:
 - `OPENSIPS_MI_URL` — JSON-RPC MI endpoint; default `http://127.0.0.1:8888/mi`
 - `CONTROL_LISTEN` — listener address; default `127.0.0.1`
 - `CONTROL_PORT` — listener port; default `8088`
+- `CONTROL_ALLOW_REMOTE` — must be `1` before binding to a non-loopback address
 - `CONTROL_TOKEN` — bearer token required for mutating methods; if unset, mutations are disabled
 - `OPENSIPS_SNAPSHOT_METHODS` — comma-separated read methods for the live dashboard
 - `CONTROL_SSE_INTERVAL` — live refresh interval in seconds; minimum `0.5`
@@ -80,6 +82,6 @@ This is a deliberate deny-by-default policy. If `CONTROL_TOKEN` is not configure
 
 ## Deployment notes
 
-The built-in HTTP server is intended as a small control surface, not an Internet-facing identity layer. Keep the default loopback binding or place it behind the same TLS, SSO/VPN and network policy used for other production operations endpoints.
+The built-in HTTP server is intended as a small control surface, not an Internet-facing identity layer. By default it refuses any non-loopback `CONTROL_LISTEN`. If remote binding is intentionally required, set `CONTROL_ALLOW_REMOTE=1` and place the service behind the same TLS, SSO/VPN and network policy used for other production operations endpoints. Read-only dashboard APIs are intentionally unauthenticated inside that trusted boundary; mutating MI calls still require `CONTROL_TOKEN`.
 
 The UI never stores the bearer token in local storage; it exists only in the current page input.
