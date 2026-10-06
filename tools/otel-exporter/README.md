@@ -32,7 +32,12 @@ Limit the payload with the same selectors supported by OpenSIPS MI:
 export OPENSIPS_STATS='core:,tm:,dialog:,media_qoe:,media_security:'
 ```
 
-Each OpenSIPS stat name is converted into a valid OTEL metric name while the original name is kept as the `opensips.stat` data-point attribute. Statistics are exported as gauges by default because the MI response does not expose the OpenSIPS statistic flags. Use `OTEL_COUNTER_STATS` to explicitly map known monotonic counters; matching metrics are emitted as cumulative monotonic OTLP sums instead of being guessed from their names.
+Each OpenSIPS stat name is converted into a valid OTEL metric name while the original name is kept as the `opensips.stat` data-point attribute. At startup the exporter calls `list_statistics` using the same selectors and automatically emits OpenSIPS statistics reported as `incremental` as cumulative monotonic OTLP sums. `non-incremental` values remain gauges because that class includes live gauges such as active dialogs and in-use transactions.
+
+If type discovery is unavailable, exporting continues safely with gauges. Use
+`OTEL_COUNTER_STATS` to explicitly promote additional known monotonic counters
+or to support older/custom MI endpoints; its comma-separated glob patterns are
+combined with the discovered incremental set.
 
 For cumulative sums, the exporter records an OTLP `startTimeUnixNano` per
 counter. The first observation uses `start == end` because the exporter does
@@ -60,9 +65,10 @@ opensips_media_qoe_degraded_reports
 - `OTEL_RESOURCE_ATTRIBUTES` — comma-separated resource `key=value` pairs
 - `OTEL_INTERVAL` — poll/export interval in seconds, minimum 1
 - `OTEL_TIMEOUT` — MI and Collector HTTP timeout, minimum 0.5 seconds
-- `OTEL_COUNTER_STATS` — optional comma-separated glob patterns for OpenSIPS
-  statistics which are cumulative monotonic counters, for example
-  `core:*_requests,tm:*_replies,media_qoe:reports`
+- `OTEL_COUNTER_STATS` — optional comma-separated glob patterns for additional
+  cumulative monotonic counters. OpenSIPS `incremental` statistics are
+  auto-detected through `list_statistics`; this setting is an override/fallback,
+  for example `core:*_requests,tm:*_replies,media_qoe:reports`
 
 ## Architecture
 
