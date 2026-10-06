@@ -26,7 +26,7 @@ SSE_INTERVAL = max(0.5, float(os.environ.get("CONTROL_SSE_INTERVAL", "2")))
 ALLOW_REMOTE = os.environ.get("CONTROL_ALLOW_REMOTE", "").strip().lower() in ("1", "true", "yes", "on")
 
 READ_PREFIXES = ("get_", "list_", "show_")
-READ_METHODS = {"status_report", "uptime", "ps", "which"}
+READ_METHODS = {"status_report", "status_report:status", "status", "uptime", "ps", "which"}
 
 
 class Metrics:
