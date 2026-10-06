@@ -22,6 +22,7 @@ SNAPSHOT_METHODS = [m.strip() for m in os.environ.get(
     "OPENSIPS_SNAPSHOT_METHODS", "get_statistics,status_report:status,uptime"
 ).split(",") if m.strip()]
 SSE_INTERVAL = max(0.5, float(os.environ.get("CONTROL_SSE_INTERVAL", "2")))
+ALLOW_REMOTE = os.environ.get("CONTROL_ALLOW_REMOTE", "").strip().lower() in ("1", "true", "yes", "on")
 
 READ_PREFIXES = ("get_", "list_", "show_", "status", "uptime", "ps", "which")
 
@@ -72,6 +73,11 @@ METRICS = Metrics()
 def is_read_only(method: str) -> bool:
     value = method.strip().lower()
     return bool(value) and value.startswith(READ_PREFIXES)
+
+
+def is_loopback_listener(host: str) -> bool:
+    value = host.strip().lower()
+    return value in ("127.0.0.1", "::1", "localhost")
 
 
 def authorized(auth_header: Optional[str], method: str) -> bool:
@@ -236,6 +242,11 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     host = os.environ.get("CONTROL_LISTEN", "127.0.0.1")
     port = int(os.environ.get("CONTROL_PORT", "8088"))
+    if not is_loopback_listener(host) and not ALLOW_REMOTE:
+        raise SystemExit(
+            "refusing non-loopback CONTROL_LISTEN without CONTROL_ALLOW_REMOTE=1; "
+            "keep the service on loopback or explicitly opt in and protect it with TLS/SSO/VPN"
+        )
     print(f"OpenSIPS control plane: http://{host}:{port} -> {MI_URL}")
     ThreadingHTTPServer((host, port), Handler).serve_forever()
 
