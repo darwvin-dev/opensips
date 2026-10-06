@@ -34,7 +34,9 @@ Environment variables:
 - `CONTROL_PORT` — listener port; default `8088`
 - `CONTROL_ALLOW_REMOTE` — must be `1` before binding to a non-loopback address
 - `CONTROL_TOKEN` — bearer token required for mutating methods; also mandatory for all API/metrics requests when remote mode is enabled
-- `OPENSIPS_SNAPSHOT_METHODS` — comma-separated read methods for the live dashboard
+- `OPENSIPS_SNAPSHOT_METHODS` — comma-separated read-only methods for the live
+  dashboard; startup fails if a method is not classified read-only, preventing
+  refresh loops from accidentally executing mutating MI commands
 - `CONTROL_SSE_INTERVAL` — live refresh interval in seconds; minimum `0.5`
 
 ## API
@@ -89,3 +91,9 @@ This is a deliberate deny-by-default policy. If `CONTROL_TOKEN` is not configure
 The built-in HTTP server is intended as a small control surface, not an Internet-facing identity layer. By default it refuses any non-loopback `CONTROL_LISTEN`. If remote binding is intentionally required, set `CONTROL_ALLOW_REMOTE=1`, configure a non-empty `CONTROL_TOKEN`, and place the service behind the same TLS, SSO/VPN and network policy used for other production operations endpoints.
 
 When remote mode is enabled, `/api/*` and `/metrics` require Bearer authentication, including read-only snapshot and SSE requests. The static UI itself remains accessible so an operator can enter the token. The browser does not store the token in local storage; it exists only in the current page input.
+
+In the default loopback-only mode, API and metrics requests also require a
+literal loopback `Host` value (`localhost`, `127/8`, or `::1`). Arbitrary
+hostnames are not DNS-resolved for this check. This prevents a malicious
+website from using DNS rebinding to read the otherwise unauthenticated local
+status API.
