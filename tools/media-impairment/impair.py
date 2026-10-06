@@ -124,6 +124,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--interface", "-i", required=False, help="network interface to shape")
     parser.add_argument("--namespace", help="optional Linux network namespace")
+    parser.add_argument(
+        "--allow-host-interface",
+        action="store_true",
+        help="permit apply/clear directly on a host interface; namespace use is safer",
+    )
     parser.add_argument("--dry-run", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -147,6 +152,11 @@ def main() -> int:
         raise SystemExit("--interface is required for apply/clear/show")
 
     try:
+        if args.command in ("apply", "clear") and not args.namespace and not args.allow_host_interface:
+            raise ValueError(
+                "refusing to modify a host interface without --allow-host-interface; "
+                "use --namespace for isolated impairment tests"
+            )
         if args.command == "apply":
             profile = PROFILES[args.profile] if args.profile else load_custom(args.config)
             return run(build_apply(args.interface, profile, args.namespace), args.dry_run)
