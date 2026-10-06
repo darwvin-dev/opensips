@@ -14,6 +14,14 @@ class ImpairTests(unittest.TestCase):
         self.assertIn("reorder 2% 50%", joined)
         self.assertIn("rate 900kbit", joined)
 
+    def test_burst_loss_is_correlated(self):
+        cmd = impair.build_apply("eth0", impair.PROFILES["burst-loss"])
+        self.assertIn("loss random 12% 70%", " ".join(cmd))
+
+    def test_loss_correlation_requires_loss(self):
+        with self.assertRaises(ValueError):
+            impair.validate_profile(impair.Profile(loss_correlation_pct=50))
+
     def test_namespace_prefix(self):
         cmd = impair.build_show("veth-media", "media-test")
         self.assertEqual(cmd[:5], ["ip", "netns", "exec", "media-test", "tc"])
