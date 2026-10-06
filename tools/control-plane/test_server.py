@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import unittest
+from unittest.mock import patch
 
 import server
 
@@ -19,6 +20,33 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertTrue(server.is_loopback_listener("localhost"))
         self.assertFalse(server.is_loopback_listener("0.0.0.0"))
         self.assertFalse(server.is_loopback_listener("10.0.0.10"))
+
+        self.assertTrue(server.is_loopback_listener("127.0.0.2"))
+        with patch("server.socket.getaddrinfo") as resolve:
+            resolve.return_value = [
+                (server.socket.AF_INET, server.socket.SOCK_STREAM, 6, "",
+                 ("127.0.0.1", 0))
+            ]
+            self.assertTrue(server.is_loopback_listener("loopback.internal"))
+        with patch("server.socket.getaddrinfo") as resolve:
+            resolve.return_value = [
+                (server.socket.AF_INET, server.socket.SOCK_STREAM, 6, "",
+                 ("10.0.0.10", 0))
+            ]
+            self.assertFalse(server.is_loopback_listener("not-local.internal"))
+
+    def test_loopback_host_header_blocks_dns_rebinding_names(self):
+        self.assertTrue(server.is_safe_local_host_header("localhost:8088"))
+        self.assertTrue(server.is_safe_local_host_header("127.0.0.1:8088"))
+        self.assertTrue(server.is_safe_local_host_header("[::1]:8088"))
+        self.assertFalse(server.is_safe_local_host_header("evil.example:8088"))
+        self.assertFalse(server.is_safe_local_host_header("10.0.0.10:8088"))
+        self.assertFalse(server.is_safe_local_host_header(None))
+
+    def test_snapshot_methods_are_read_only_only(self):
+        server.validate_snapshot_methods(["get_statistics", "status_report:status", "uptime"])
+        with self.assertRaises(ValueError):
+            server.validate_snapshot_methods(["get_statistics", "reload"])
 
     def test_mutations_require_token(self):
         old_token = server.CONTROL_TOKEN
