@@ -21,6 +21,22 @@ class ExporterTests(unittest.TestCase):
         self.assertEqual(point["timeUnixNano"], "123")
         self.assertEqual(point["attributes"][0]["value"]["stringValue"], "media_qoe:degraded_reports")
 
+    def test_counter_patterns_emit_cumulative_monotonic_sum(self):
+        payload = exporter.build_otlp(
+            {"core:received_requests": 42.0, "dialog:active_dialogs": 3.0},
+            "opensips-test", "", timestamp_ns=123,
+            counter_patterns=["core:*_requests"],
+        )
+        metrics = {
+            m["name"]: m
+            for m in payload["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]
+        }
+        counter = metrics["opensips_core_received_requests"]
+        self.assertNotIn("gauge", counter)
+        self.assertTrue(counter["sum"]["isMonotonic"])
+        self.assertEqual(counter["sum"]["aggregationTemporality"], 2)
+        self.assertIn("gauge", metrics["opensips_dialog_active_dialogs"])
+
     def test_parse_pairs(self):
         self.assertEqual(exporter.parse_pairs("a=1,b=two"), {"a": "1", "b": "two"})
         with self.assertRaises(ValueError):
