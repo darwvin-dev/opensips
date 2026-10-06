@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import hashlib
 import json
 import os
 import re
@@ -95,14 +96,22 @@ def build_otlp(metrics: Dict[str, float], service_name: str, resource_raw: str,
                counter_patterns: Iterable[str] = ()) -> Dict[str, Any]:
     now = timestamp_ns if timestamp_ns is not None else time.time_ns()
     points = []
+    used_names: Dict[str, str] = {}
     for original, value in sorted(metrics.items()):
+        metric_name = sanitize_metric_name(original)
+        previous = used_names.get(metric_name)
+        if previous is not None and previous != original:
+            suffix = hashlib.sha1(original.encode("utf-8")).hexdigest()[:8]
+            metric_name = f"{metric_name}_{suffix}"
+        used_names[metric_name] = original
+
         data_point = {
             "timeUnixNano": str(now),
             "asDouble": value,
             "attributes": [{"key": "opensips.stat", "value": {"stringValue": original}}],
         }
         metric = {
-            "name": sanitize_metric_name(original),
+            "name": metric_name,
             "description": f"OpenSIPS statistic {original}",
             "unit": "1",
         }
