@@ -13,6 +13,13 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertFalse(server.is_read_only("reload"))
         self.assertFalse(server.is_read_only("teardown"))
 
+    def test_listener_safety(self):
+        self.assertTrue(server.is_loopback_listener("127.0.0.1"))
+        self.assertTrue(server.is_loopback_listener("::1"))
+        self.assertTrue(server.is_loopback_listener("localhost"))
+        self.assertFalse(server.is_loopback_listener("0.0.0.0"))
+        self.assertFalse(server.is_loopback_listener("10.0.0.10"))
+
     def test_mutations_require_token(self):
         old = server.CONTROL_TOKEN
         try:
