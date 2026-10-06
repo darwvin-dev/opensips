@@ -21,6 +21,17 @@ class ExporterTests(unittest.TestCase):
         self.assertEqual(point["timeUnixNano"], "123")
         self.assertEqual(point["attributes"][0]["value"]["stringValue"], "media_qoe:degraded_reports")
 
+    def test_sanitized_metric_name_collisions_get_stable_suffix(self):
+        payload = exporter.build_otlp(
+            {"custom:a-b": 1.0, "custom:a_b": 2.0},
+            "opensips-test", "", timestamp_ns=123,
+        )
+        metrics = payload["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]
+        names = [m["name"] for m in metrics]
+        self.assertEqual(len(names), len(set(names)))
+        self.assertIn("opensips_custom_a_b", names)
+        self.assertTrue(any(name.startswith("opensips_custom_a_b_") for name in names))
+
     def test_counter_patterns_emit_cumulative_monotonic_sum(self):
         payload = exporter.build_otlp(
             {"core:received_requests": 42.0, "dialog:active_dialogs": 3.0},
