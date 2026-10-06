@@ -12,6 +12,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -105,6 +106,18 @@ def is_loopback_listener(host: str) -> bool:
         return False
 
 
+def is_safe_local_host_header(value: Optional[str]) -> bool:
+    """Reject DNS-rebinding hostnames when serving an unauthenticated loopback API."""
+    if not value:
+        return False
+    try:
+        # urlsplit correctly handles bracketed IPv6 and optional ports.
+        host = urlsplit("//" + value, scheme="http").hostname
+    except ValueError:
+        return False
+    return bool(host) and is_loopback_listener(host)
+
+
 def validate_snapshot_methods(methods: list[str]) -> None:
     unsafe = [method for method in methods if not is_read_only(method)]
     if unsafe:
@@ -190,6 +203,11 @@ def json_bytes(value: Any) -> bytes:
 class Handler(BaseHTTPRequestHandler):
     server_version = "OpenSIPSControl/1.0"
 
+    def _api_origin_allowed(self) -> bool:
+        if ALLOW_REMOTE:
+            return True
+        return is_safe_local_host_header(self.headers.get("Host"))
+
     def log_message(self, fmt: str, *args: Any) -> None:
         print(f"{self.address_string()} - {fmt % args}")
 
@@ -217,6 +235,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         METRICS.inc_http()
+        if self.path.startswith(("/api/", "/metrics")) and not self._api_origin_allowed():
+            self._json(HTTPStatus.FORBIDDEN, {"error": "invalid Host for loopback control API"})
+            return
         if ALLOW_REMOTE and self.path.startswith(("/api/", "/metrics")):
             if not bearer_authorized(self.headers.get("Authorization")):
                 self._json(HTTPStatus.UNAUTHORIZED, {"error": "Bearer authentication required"})
@@ -246,6 +267,9 @@ class Handler(BaseHTTPRequestHandler):
         METRICS.inc_http()
         if self.path != "/api/mi":
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            return
+        if not self._api_origin_allowed():
+            self._json(HTTPStatus.FORBIDDEN, {"error": "invalid Host for loopback control API"})
             return
         try:
             data = self._read_json()
