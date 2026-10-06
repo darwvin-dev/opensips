@@ -81,20 +81,49 @@ def fetch_statistics(mi_url: str, selectors: List[str]) -> Dict[str, float]:
     return metrics
 
 
+def fetch_stat_types(mi_url: str, selectors: List[str]) -> Dict[str, str]:
+    """Return OpenSIPS statistic types as reported by list_statistics."""
+    response = json_request(mi_url, {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "list_statistics",
+        "params": {"statistics": selectors},
+    })
+    if response.get("error"):
+        raise RuntimeError(response["error"])
+    result = response.get("result")
+    if not isinstance(result, dict):
+        raise RuntimeError("MI list_statistics did not return an object")
+
+    types: Dict[str, str] = {}
+    for name, value in result.items():
+        if isinstance(value, str) and value in ("incremental", "non-incremental"):
+            types[name] = value
+    return types
+
+
+
 def resource_attributes(service_name: str, raw: str) -> List[Dict[str, Any]]:
     attrs = {"service.name": service_name}
     attrs.update(parse_pairs(raw))
     return [{"key": key, "value": {"stringValue": val}} for key, val in sorted(attrs.items())]
 
 
-def is_counter_stat(name: str, patterns: Iterable[str]) -> bool:
+def is_counter_stat(name: str, patterns: Iterable[str],
+                    stat_types: Dict[str, str] | None = None) -> bool:
+    # OpenSIPS marks resettable counters as "incremental". Values reported as
+    # "non-incremental" may be gauges (active dialogs, in-use transactions) or
+    # non-resettable values, so only explicit overrides may promote those.
+    if stat_types and stat_types.get(name) == "incremental":
+        return True
     return any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns)
 
 
 def build_otlp(metrics: Dict[str, float], service_name: str, resource_raw: str,
                timestamp_ns: int | None = None,
                counter_patterns: Iterable[str] = (),
-               counter_state: MutableMapping[str, Tuple[int, float]] | None = None) -> Dict[str, Any]:
+               counter_state: MutableMapping[str, Tuple[int, float]] | None = None,
+               stat_types: Dict[str, str] | None = None) -> Dict[str, Any]:
     now = timestamp_ns if timestamp_ns is not None else time.time_ns()
     points = []
     used_names: Dict[str, str] = {}
@@ -116,7 +145,7 @@ def build_otlp(metrics: Dict[str, float], service_name: str, resource_raw: str,
             "description": f"OpenSIPS statistic {original}",
             "unit": "1",
         }
-        if is_counter_stat(original, counter_patterns):
+        if is_counter_stat(original, counter_patterns, stat_types):
             if counter_state is not None:
                 state = counter_state.get(original)
                 # OTLP permits start==end for the first point of a cumulative
@@ -152,11 +181,13 @@ def build_otlp(metrics: Dict[str, float], service_name: str, resource_raw: str,
 def export_once(mi_url: str, endpoint: str, selectors: List[str], service_name: str,
                 resource_raw: str, otlp_headers: Dict[str, str], timeout: float,
                 counter_patterns: Iterable[str] = (),
-                counter_state: MutableMapping[str, Tuple[int, float]] | None = None) -> int:
+                counter_state: MutableMapping[str, Tuple[int, float]] | None = None,
+                stat_types: Dict[str, str] | None = None) -> int:
     stats = fetch_statistics(mi_url, selectors)
     payload = build_otlp(stats, service_name, resource_raw,
                          counter_patterns=counter_patterns,
-                         counter_state=counter_state)
+                         counter_state=counter_state,
+                         stat_types=stat_types)
     json_request(otlp_endpoint(endpoint), payload, otlp_headers, timeout=timeout)
     return len(stats)
 
@@ -183,12 +214,25 @@ def main() -> int:
     interval = max(1.0, float(os.environ.get("OTEL_INTERVAL", "5")))
     timeout = max(0.5, float(os.environ.get("OTEL_TIMEOUT", "5")))
     counter_state: Dict[str, Tuple[int, float]] = {}
+    stat_types: Dict[str, str] = {}
+    try:
+        stat_types = fetch_stat_types(mi_url, selectors)
+        if args.debug:
+            incremental = sum(1 for value in stat_types.values()
+                              if value == "incremental")
+            print(f"discovered {incremental} incremental OpenSIPS counters")
+    except (OSError, ValueError, RuntimeError, urllib.error.URLError,
+            json.JSONDecodeError) as exc:
+        # Older/custom MI endpoints may not expose list_statistics. Exporting
+        # remains safe: unmatched values stay gauges and OTEL_COUNTER_STATS can
+        # explicitly promote known cumulative counters.
+        print(f"otel-exporter: statistic type discovery unavailable: {exc}")
 
     while True:
         try:
             count = export_once(mi_url, endpoint, selectors, service_name,
                                 resource_raw, headers, timeout, counter_patterns,
-                                counter_state)
+                                counter_state, stat_types)
             if args.debug:
                 print(f"exported {count} OpenSIPS statistics to {otlp_endpoint(endpoint)}")
         except (OSError, ValueError, RuntimeError, urllib.error.URLError, json.JSONDecodeError) as exc:
