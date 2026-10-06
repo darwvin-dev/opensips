@@ -21,15 +21,35 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertFalse(server.is_loopback_listener("10.0.0.10"))
 
     def test_mutations_require_token(self):
-        old = server.CONTROL_TOKEN
+        old_token = server.CONTROL_TOKEN
+        old_remote = server.ALLOW_REMOTE
         try:
             server.CONTROL_TOKEN = "secret"
+            server.ALLOW_REMOTE = False
             self.assertTrue(server.authorized(None, "get_statistics"))
             self.assertFalse(server.authorized(None, "reload"))
             self.assertFalse(server.authorized("Bearer wrong", "reload"))
             self.assertTrue(server.authorized("Bearer secret", "reload"))
         finally:
-            server.CONTROL_TOKEN = old
+            server.CONTROL_TOKEN = old_token
+            server.ALLOW_REMOTE = old_remote
+
+    def test_remote_mode_requires_token_for_reads_too(self):
+        old_token = server.CONTROL_TOKEN
+        old_remote = server.ALLOW_REMOTE
+        try:
+            server.CONTROL_TOKEN = "secret"
+            server.ALLOW_REMOTE = True
+            self.assertFalse(server.authorized(None, "get_statistics"))
+            self.assertFalse(server.authorized("Bearer wrong", "get_statistics"))
+            self.assertTrue(server.authorized("Bearer secret", "get_statistics"))
+        finally:
+            server.CONTROL_TOKEN = old_token
+            server.ALLOW_REMOTE = old_remote
+
+    def test_read_only_does_not_use_broad_status_prefix(self):
+        self.assertFalse(server.is_read_only("status_set"))
+        self.assertFalse(server.is_read_only("status_reset_everything"))
 
     def test_snapshot_statistics_uses_required_array_param(self):
         old = server.MI
