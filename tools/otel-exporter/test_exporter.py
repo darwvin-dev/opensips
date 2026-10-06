@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import unittest
+from unittest.mock import patch
 
 import exporter
 
@@ -84,6 +85,60 @@ class ExporterTests(unittest.TestCase):
         )
         point = payload["resourceMetrics"][0]["scopeMetrics"][0]["metrics"][0]["gauge"]["dataPoints"][0]
         self.assertNotIn("startTimeUnixNano", point)
+
+    def test_incremental_mi_type_is_auto_counter(self):
+        payload = exporter.build_otlp(
+            {
+                "dialog:processed_dialogs": 12.0,
+                "dialog:active_dialogs": 3.0,
+            },
+            "opensips-test", "", timestamp_ns=123,
+            stat_types={
+                "dialog:processed_dialogs": "incremental",
+                "dialog:active_dialogs": "non-incremental",
+            },
+        )
+        metrics = {
+            m["name"]: m
+            for m in payload["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]
+        }
+        self.assertIn("sum", metrics["opensips_dialog_processed_dialogs"])
+        self.assertIn("gauge", metrics["opensips_dialog_active_dialogs"])
+
+    def test_explicit_counter_pattern_can_override_non_incremental_type(self):
+        payload = exporter.build_otlp(
+            {"custom:never_reset_total": 9.0},
+            "opensips-test", "", timestamp_ns=123,
+            counter_patterns=["custom:*_total"],
+            stat_types={"custom:never_reset_total": "non-incremental"},
+        )
+        metric = payload["resourceMetrics"][0]["scopeMetrics"][0]["metrics"][0]
+        self.assertIn("sum", metric)
+
+    @patch("exporter.json_request")
+    def test_fetch_stat_types_uses_named_statistics_array(self, request):
+        request.return_value = {
+            "jsonrpc": "2.0",
+            "result": {
+                "dialog:active_dialogs": "non-incremental",
+                "dialog:processed_dialogs": "incremental",
+                "ignored": 123,
+            },
+            "id": 2,
+        }
+        result = exporter.fetch_stat_types(
+            "http://127.0.0.1:8888/mi", ["dialog:"]
+        )
+        self.assertEqual(
+            result,
+            {
+                "dialog:active_dialogs": "non-incremental",
+                "dialog:processed_dialogs": "incremental",
+            },
+        )
+        payload = request.call_args.args[1]
+        self.assertEqual(payload["method"], "list_statistics")
+        self.assertEqual(payload["params"], {"statistics": ["dialog:"]})
 
     def test_parse_pairs(self):
         self.assertEqual(exporter.parse_pairs("a=1,b=two"), {"a": "1", "b": "two"})
