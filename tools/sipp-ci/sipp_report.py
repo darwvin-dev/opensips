@@ -15,7 +15,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 ALIASES = {
     "successful_calls": ("SuccessfulCall(C)", "SuccessfulCall", "SuccessfulCalls", "Successful calls"),
     "failed_calls": ("FailedCall(C)", "FailedCall", "FailedCalls", "Failed calls"),
-    "response_time_ms": ("ResponseTime(C)", "ResponseTime", "ResponseTime(ms)", "Response time"),
+    "response_time_ms": ("ResponseTime1(C)", "ResponseTime(C)", "ResponseTime1", "ResponseTime(ms)", "Response time"),
     "call_rate": ("CallRate(C)", "CallRate", "CallRate(P)", "Call rate"),
 }
 
@@ -28,6 +28,39 @@ def _number(value: str) -> Optional[float]:
         return float(value)
     except ValueError:
         return None
+
+
+def _duration_ms(value: str) -> Optional[float]:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    parts = raw.split(":")
+    if len(parts) in (3, 4):
+        try:
+            hours = int(parts[0])
+            minutes = int(parts[1])
+            seconds = int(parts[2])
+            micros = int(parts[3].ljust(6, "0")) if len(parts) == 4 else 0
+        except ValueError:
+            return None
+        if minutes < 0 or minutes >= 60 or seconds < 0 or seconds >= 60:
+            return None
+        return (hours * 3600 + minutes * 60 + seconds) * 1000.0 + micros / 1000.0
+    return _number(raw)
+
+
+def _pick_response_time_ms(row: Dict[str, str], names: Iterable[str]) -> Optional[float]:
+    lowered = {k.strip().lower(): v for k, v in row.items() if k}
+    for name in names:
+        raw = row.get(name)
+        if raw is None:
+            raw = lowered.get(name.lower())
+        if raw is None:
+            continue
+        value = _duration_ms(raw)
+        if value is not None:
+            return value
+    return None
 
 
 def _pick(row: Dict[str, str], names: Iterable[str]) -> Optional[float]:
@@ -61,7 +94,14 @@ def load_final_row(path: Path) -> Dict[str, str]:
 
 
 def summarize(row: Dict[str, str]) -> Dict[str, Optional[float]]:
-    out = {name: _pick(row, aliases) for name, aliases in ALIASES.items()}
+    out = {
+        name: (
+            _pick_response_time_ms(row, aliases)
+            if name == "response_time_ms"
+            else _pick(row, aliases)
+        )
+        for name, aliases in ALIASES.items()
+    }
     ok = out["successful_calls"]
     failed = out["failed_calls"]
     if ok is not None and failed is not None and ok + failed > 0:
