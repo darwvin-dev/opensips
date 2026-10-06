@@ -78,3 +78,19 @@ A practical media regression job is:
 6. clear the qdisc in the job cleanup step.
 
 For bidirectional impairment, apply a profile to both egress interfaces that carry the two RTP directions. `netem` shapes egress traffic, so one qdisc should not be mistaken for a symmetric network model.
+
+
+## Safety
+
+By default, `apply` and `clear` refuse to modify a host interface directly.
+Use a network namespace for isolated tests:
+
+```bash
+sudo python3 tools/media-impairment/impair.py \
+  --namespace media-test --interface veth-media apply --profile bad-mobile
+```
+
+If host-level shaping is intentional, opt in explicitly with
+`--allow-host-interface`. Both `qdisc replace` and `qdisc del` can replace
+or remove an existing root queue discipline, so this flag should not be used
+casually on production interfaces.
