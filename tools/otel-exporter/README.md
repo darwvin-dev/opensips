@@ -32,7 +32,15 @@ Limit the payload with the same selectors supported by OpenSIPS MI:
 export OPENSIPS_STATS='core:,tm:,dialog:,media_qoe:,media_security:'
 ```
 
-Each OpenSIPS stat name is converted into a valid OTEL metric name while the original name is kept as the `opensips.stat` data-point attribute. Statistics are exported as gauges by default because the MI response does not expose the OpenSIPS statistic flags. Use `OTEL_COUNTER_STATS` to explicitly map known monotonic counters; matching metrics are emitted as cumulative monotonic OTLP sums instead of being guessed from their names. For example:
+Each OpenSIPS stat name is converted into a valid OTEL metric name while the original name is kept as the `opensips.stat` data-point attribute. Statistics are exported as gauges by default because the MI response does not expose the OpenSIPS statistic flags. Use `OTEL_COUNTER_STATS` to explicitly map known monotonic counters; matching metrics are emitted as cumulative monotonic OTLP sums instead of being guessed from their names.
+
+For cumulative sums, the exporter records an OTLP `startTimeUnixNano` per
+counter. The first observation uses `start == end` because the exporter does
+not know when the OpenSIPS process originally began accumulating that value.
+The start timestamp then remains stable. If a monotonic value decreases, the
+exporter treats it as a counter reset and starts a new cumulative sequence at
+that observation. This avoids fabricating pre-exporter history and gives
+Collectors enough information to calculate reset-aware rates. For example:
 
 ```text
 media_qoe:degraded_reports
