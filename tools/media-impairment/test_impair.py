@@ -22,6 +22,12 @@ class ImpairTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             impair.validate_profile(impair.Profile(loss_correlation_pct=50))
 
+    def test_host_mutation_requires_explicit_opt_in(self):
+        with self.assertRaises(ValueError):
+            impair.ensure_mutation_safe(None, False)
+        impair.ensure_mutation_safe(None, True)
+        impair.ensure_mutation_safe("media-test", False)
+
     def test_namespace_prefix(self):
         cmd = impair.build_show("veth-media", "media-test")
         self.assertEqual(cmd[:5], ["ip", "netns", "exec", "media-test", "tc"])
