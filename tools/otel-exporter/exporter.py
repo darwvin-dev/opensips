@@ -12,7 +12,7 @@ import re
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, MutableMapping, Tuple
 
 NAME_RE = re.compile(r"[^a-zA-Z0-9_.]+")
 
@@ -93,7 +93,8 @@ def is_counter_stat(name: str, patterns: Iterable[str]) -> bool:
 
 def build_otlp(metrics: Dict[str, float], service_name: str, resource_raw: str,
                timestamp_ns: int | None = None,
-               counter_patterns: Iterable[str] = ()) -> Dict[str, Any]:
+               counter_patterns: Iterable[str] = (),
+               counter_state: MutableMapping[str, Tuple[int, float]] | None = None) -> Dict[str, Any]:
     now = timestamp_ns if timestamp_ns is not None else time.time_ns()
     points = []
     used_names: Dict[str, str] = {}
@@ -116,6 +117,20 @@ def build_otlp(metrics: Dict[str, float], service_name: str, resource_raw: str,
             "unit": "1",
         }
         if is_counter_stat(original, counter_patterns):
+            if counter_state is not None:
+                state = counter_state.get(original)
+                # OTLP permits start==end for the first point of a cumulative
+                # stream when the true start is unknown. Keep that start stable
+                # until a monotonic counter decreases, which indicates a reset.
+                if state is None or value < state[1]:
+                    start_ns = now
+                else:
+                    start_ns = state[0]
+                counter_state[original] = (start_ns, value)
+            else:
+                # Stateless callers can still emit a valid unknown-start point.
+                start_ns = now
+            data_point["startTimeUnixNano"] = str(start_ns)
             metric["sum"] = {
                 "aggregationTemporality": 2,
                 "isMonotonic": True,
@@ -134,13 +149,14 @@ def build_otlp(metrics: Dict[str, float], service_name: str, resource_raw: str,
         }]
     }
 
-
 def export_once(mi_url: str, endpoint: str, selectors: List[str], service_name: str,
                 resource_raw: str, otlp_headers: Dict[str, str], timeout: float,
-                counter_patterns: Iterable[str] = ()) -> int:
+                counter_patterns: Iterable[str] = (),
+                counter_state: MutableMapping[str, Tuple[int, float]] | None = None) -> int:
     stats = fetch_statistics(mi_url, selectors)
     payload = build_otlp(stats, service_name, resource_raw,
-                         counter_patterns=counter_patterns)
+                         counter_patterns=counter_patterns,
+                         counter_state=counter_state)
     json_request(otlp_endpoint(endpoint), payload, otlp_headers, timeout=timeout)
     return len(stats)
 
@@ -166,11 +182,13 @@ def main() -> int:
     ]
     interval = max(1.0, float(os.environ.get("OTEL_INTERVAL", "5")))
     timeout = max(0.5, float(os.environ.get("OTEL_TIMEOUT", "5")))
+    counter_state: Dict[str, Tuple[int, float]] = {}
 
     while True:
         try:
             count = export_once(mi_url, endpoint, selectors, service_name,
-                                resource_raw, headers, timeout, counter_patterns)
+                                resource_raw, headers, timeout, counter_patterns,
+                                counter_state)
             if args.debug:
                 print(f"exported {count} OpenSIPS statistics to {otlp_endpoint(endpoint)}")
         except (OSError, ValueError, RuntimeError, urllib.error.URLError, json.JSONDecodeError) as exc:
