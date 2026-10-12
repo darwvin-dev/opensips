@@ -63,6 +63,12 @@ extern int race_condition_timeout;
 extern stat_var *processed_dlgs;
 extern stat_var *expired_dlgs;
 extern stat_var *failed_dlgs;
+extern stat_var *established_dlgs;
+extern stat_var *failed_3xx_dlgs;
+extern stat_var *failed_4xx_dlgs;
+extern stat_var *failed_5xx_dlgs;
+extern stat_var *failed_6xx_dlgs;
+extern stat_var *failed_other_dlgs;
 
 int ctx_lastdstleg_idx = -1;
 int ctx_timeout_idx = -1;
@@ -967,6 +973,9 @@ static void dlg_onreply(struct cell* t, int type, struct tmcb_params *param)
 			if_update_stat(dlg_enable_stats, early_dlgs, -1);
 
 		if_update_stat(dlg_enable_stats, active_dlgs, 1);
+		/* Count each initial 2xx confirmation only once.  An ACK, a
+		 * retransmitted 2xx or a replicated state update is not a new call. */
+		if_update_stat(dlg_enable_stats, established_dlgs, 1);
 		return;
 	}
 
@@ -988,6 +997,22 @@ static void dlg_onreply(struct cell* t, int type, struct tmcb_params *param)
 		if (old_state==DLG_STATE_EARLY)
 			if_update_stat(dlg_enable_stats, early_dlgs, -1);
 		if_update_stat(dlg_enable_stats, failed_dlgs, 1);
+		/* Only count the final failure on the first transition to DELETED.
+		 * Transaction deletion and internal failures have no SIP code. */
+		if (event == DLG_EVENT_RPL3xx) {
+			if (param->code < 400)
+				if_update_stat(dlg_enable_stats, failed_3xx_dlgs, 1);
+			else if (param->code < 500)
+				if_update_stat(dlg_enable_stats, failed_4xx_dlgs, 1);
+			else if (param->code < 600)
+				if_update_stat(dlg_enable_stats, failed_5xx_dlgs, 1);
+			else if (param->code < 700)
+				if_update_stat(dlg_enable_stats, failed_6xx_dlgs, 1);
+			else
+				if_update_stat(dlg_enable_stats, failed_other_dlgs, 1);
+		} else {
+			if_update_stat(dlg_enable_stats, failed_other_dlgs, 1);
+		}
 		return;
 	}
 
@@ -1949,6 +1974,7 @@ error:
 	unref_dlg(dlg,extra_ref);
 	dialog_cleanup( req, NULL);
 	if_update_stat(dlg_enable_stats, failed_dlgs, 1);
+	if_update_stat(dlg_enable_stats, failed_other_dlgs, 1);
 	return -1;
 }
 
