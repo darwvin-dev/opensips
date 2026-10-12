@@ -2293,6 +2293,45 @@ never established due to whatever reasons - internal error,
 negative reply, cancelled, etc )
 
 
+#### established_dialogs
+
+Returns the number of locally created dialogs that reached the **confirmed**
+state following an initial 2xx reply since startup (or the last statistics
+reset). The counter is incremented once on the first confirmation, not on
+retransmitted 2xx replies or ACKs. Restored or replicated dialogs do not
+increment this counter.
+
+When `create_dialog()` is invoked for every initial INVITE in the monitored
+traffic, `rate(dialog:established_dialogs)` can be used to derive answered
+calls per second. `processed_dialogs` is the corresponding tracked-dialog
+creation counter; neither counter measures raw SIP requests.
+
+#### failed_3xx_dialogs, failed_4xx_dialogs, failed_5xx_dialogs, failed_6xx_dialogs
+
+Count the first failed dialog setup transition with a final SIP reply in the
+corresponding response class. Retransmissions of a final failure do not count
+again. These counters classify the **final dialog outcome**, not each branch
+response or all SIP replies.
+
+#### failed_other_dialogs
+
+Counts failed dialog setups without a final 3xx–6xx reply, including internal
+creation errors and transaction deletion before dialog confirmation.
+
+These counters complement `failed_dialogs`. A late 2xx arriving after a
+previously recorded failure may cause both an established and a failed event
+for the same dialog because of a CANCEL/200 OK race. The exported counters
+reflect state-machine events, not a deduplicated CDR ledger. All outcome
+counters are local to the node and are not backfilled after a restart,
+database restore, or replication.
+
+For node-local KPIs, use the existing `active_dialogs` gauge for established
+concurrent dialogs, and take rates of `processed_dialogs` and
+`established_dialogs` over a measurement interval for tracked attempted
+and established dialog CPS, respectively. The `qrouting` module already
+provides ASR, ACD and PDD measurements for gateway routing decisions; these
+statistics do not duplicate that functionality.
+
 #### create_sent
 
 
