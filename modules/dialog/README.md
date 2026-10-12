@@ -2302,9 +2302,9 @@ retransmitted 2xx replies or ACKs. Restored or replicated dialogs do not
 increment this counter.
 
 When `create_dialog()` is invoked for every initial INVITE in the monitored
-traffic, `rate(dialog:established_dialogs)` can be used to derive answered
-calls per second. `processed_dialogs` is the corresponding tracked-dialog
-creation counter; neither counter measures raw SIP requests.
+traffic, the change in `established_dialogs` over time can be used to derive
+answered calls per second. `processed_dialogs` is the corresponding
+tracked-dialog creation counter; neither counter measures raw SIP requests.
 
 #### failed_3xx_dialogs, failed_4xx_dialogs, failed_5xx_dialogs, failed_6xx_dialogs
 
@@ -2331,6 +2331,35 @@ concurrent dialogs, and take rates of `processed_dialogs` and
 and established dialog CPS, respectively. The `qrouting` module already
 provides ASR, ACD and PDD measurements for gateway routing decisions; these
 statistics do not duplicate that functionality.
+
+The counters are available through the standard Statistics MI command:
+
+```console
+opensips-cli -x mi get_statistics dialog:
+```
+
+With the `prometheus` module configured to export the `dialog:` group and
+`group_mode=1`, the default metric names can be queried as follows:
+
+```promql
+# CPS for dialogs that received a successful initial 2xx reply
+rate(opensips_dialog_established_dialogs[1m])
+
+# Rate of newly tracked dialogs (not raw INVITE request rate)
+rate(opensips_dialog_processed_dialogs[1m])
+
+# Concurrent active dialogs
+opensips_dialog_active_dialogs
+
+# Rate of dialog setups that failed with a final 5xx response
+rate(opensips_dialog_failed_5xx_dialogs[1m])
+```
+
+The Prometheus metric names assume the default export prefix and group naming.
+Use a matching time range and instance selector for numerator and denominator
+when comparing rates. Do not aggregate replicated dialog gauges across HA
+nodes without accounting for duplicates. Counter resets, restarts and late
+200 OK/CANCEL races can affect short-window estimates.
 
 #### create_sent
 
