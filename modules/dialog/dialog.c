@@ -90,6 +90,13 @@ stat_var *processed_dlgs = 0;
 stat_var *expired_dlgs = 0;
 stat_var *failed_dlgs = 0;
 stat_var *early_dlgs  = 0;
+/* Counters for dialog setup outcomes, updated only on local transitions. */
+stat_var *established_dlgs = 0;
+stat_var *failed_3xx_dlgs = 0;
+stat_var *failed_4xx_dlgs = 0;
+stat_var *failed_5xx_dlgs = 0;
+stat_var *failed_6xx_dlgs = 0;
+stat_var *failed_other_dlgs = 0;
 stat_var *create_sent  = 0;
 stat_var *update_sent  = 0;
 stat_var *delete_sent  = 0;
@@ -371,6 +378,12 @@ static const stat_export_t mod_stats[] = {
 	{"processed_dialogs" ,  0,              &processed_dlgs    },
 	{"expired_dialogs" ,    0,              &expired_dlgs      },
 	{"failed_dialogs",      0,              &failed_dlgs       },
+	{"established_dialogs", 0,              &established_dlgs  },
+	{"failed_3xx_dialogs",  0,              &failed_3xx_dlgs   },
+	{"failed_4xx_dialogs",  0,              &failed_4xx_dlgs   },
+	{"failed_5xx_dialogs",  0,              &failed_5xx_dlgs   },
+	{"failed_6xx_dialogs",  0,              &failed_6xx_dlgs   },
+	{"failed_other_dialogs",0,              &failed_other_dlgs },
 	{"create_sent",         0,              &create_sent       },
 	{"update_sent",         0,              &update_sent       },
 	{"delete_sent",         0,              &delete_sent       },
